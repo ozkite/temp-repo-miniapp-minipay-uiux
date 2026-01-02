@@ -1,112 +1,314 @@
-import Image from "next/image";
+'use client';
+
+import { useState, useEffect } from 'react';
+import { useAccount, useConnect, useDisconnect, useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
+import { injected } from 'wagmi/connectors';
+import { parseEther } from 'viem';
+import { Loader2 } from 'lucide-react';
+
+import { isMiniPay } from '../lib/minipay-connector';
+import { shuffleCards } from '../utils/shuffle-cards';
+import { categories, type Project } from '../lib/data';
+import { StarryBackground } from '@/components/starry-background';
+import { ToggleMenu } from '@/components/toggle-menu';
+import { AmountSelector, type DonationAmount, type StableCoin, type ConfirmSwipes } from '@/components/amount-selector';
+import { CategoryMenu } from '@/components/category-menu';
+import { ProjectCard } from '@/components/project-card';
+import { CategorySection } from '@/components/category-section';
+
+// Contract Addresses
+const USDT_ADAPTER_ADDRESS = "0x0e2a3e05bc9a16f5292ddf5e1cD6D6A887483D5e"; // Provided in prompt
+const USDT_ADDRESS = "0x48065fbBE25f71C9282dd5222dEFa1B3D5610b05"; // Celo USDT
+const CUSD_ADDRESS = "0x765DE816845861e75A25fCA122bb6898B8B1282a"; // Celo cUSD
+
+// ABI for SwipeDonation/Adapter (donate function)
+const donationAbi = [
+  {
+    inputs: [
+      { internalType: "address", name: "token", type: "address" },
+      { internalType: "address", name: "recipient", type: "address" },
+      { internalType: "uint256", name: "amount", type: "uint256" },
+    ],
+    name: "donate",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+] as const;
+
+// ERC20 ABI for Approve
+const erc20Abi = [
+  {
+    constant: false,
+    inputs: [
+      { name: "_spender", type: "address" },
+      { name: "_value", type: "uint256" },
+    ],
+    name: "approve",
+    outputs: [{ name: "", type: "bool" }],
+    payable: false,
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+] as const;
 
 export default function Home() {
-  return (
-    <main className="flex min-h-screen flex-col items-center justify-between p-24">
-      <div className="z-10 w-full max-w-5xl items-center justify-between font-mono text-sm lg:flex">
-        <p className="fixed left-0 top-0 flex w-full justify-center border-b border-gray-300 bg-gradient-to-b from-zinc-200 pb-6 pt-8 backdrop-blur-2xl dark:border-neutral-800 dark:bg-zinc-800/30 dark:from-inherit lg:static lg:w-auto  lg:rounded-xl lg:border lg:bg-gray-200 lg:p-4 lg:dark:bg-zinc-800/30">
-          Get started by editing&nbsp;
-          <code className="font-mono font-bold">app/page.tsx</code>
-        </p>
-        <div className="fixed bottom-0 left-0 flex h-48 w-full items-end justify-center bg-gradient-to-t from-white via-white dark:from-black dark:via-black lg:static lg:size-auto lg:bg-none">
-          <a
-            className="pointer-events-none flex place-items-center gap-2 p-8 lg:pointer-events-auto lg:p-0"
-            href="https://vercel.com?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            By{" "}
-            <Image
-              src="/vercel.svg"
-              alt="Vercel Logo"
-              className="dark:invert"
-              width={100}
-              height={24}
-              priority
+  const { address, isConnected } = useAccount();
+  const { connect } = useConnect();
+  const { disconnect } = useDisconnect();
+
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [loading, setLoading] = useState(true);
+
+  const [viewMode, setViewMode] = useState<"swipe" | "list">("swipe");
+  const [donationAmount, setDonationAmount] = useState<DonationAmount | null>(null);
+  const [donationCurrency, setDonationCurrency] = useState<StableCoin>("cUSD");
+  const [confirmSwipes, setConfirmSwipes] = useState<ConfirmSwipes>(20);
+  const [selectedCategory, setSelectedCategory] = useState("See All");
+
+  // Load and shuffle project data
+  useEffect(() => {
+    const loadProjects = async () => {
+      try {
+        setLoading(true);
+        // Load JSON files
+        const kCardsModule = await import('../lib/k_cards.json');
+        const bCardsModule = await import('../lib/b_cards.json');
+        const eCardsModule = await import('../lib/e_cards.json');
+
+        // Handle both default export and direct array
+        const kCards = (kCardsModule.default || kCardsModule) as any[];
+        const bCards = (bCardsModule.default || bCardsModule) as any[];
+        const eCards = (eCardsModule.default || eCardsModule) as any[];
+
+        // Normalize data to fit Project interface
+        const normalize = (items: any[], category: string) => items.map((item, idx) => ({
+          id: item.id || `${category}-${idx}`,
+          name: item["Name of Project"] || item.name || "Unknown",
+          description: item["Description of Project"] || item.bio || item.description || "",
+          category: item.Category || category, // Use provided category or fallback
+          imageUrl: item["URL to Logo"] || item.image || "NA",
+          website: item.Website || item.website || "NA",
+          twitter: item.Twitter || item.twitter || "NA",
+          walletAddress: item.wallet || item.walletAddress || "0x0000000000000000000000000000000000000000", // Fallback
+          ...item
+        }));
+
+        const normalizedK = normalize(kCards, "DApps");
+        const normalizedB = normalize(bCards, "Builders");
+        const normalizedE = normalize(eCards, "Eco Projects");
+
+        // Combine and shuffle all cards
+        const allCards = [...normalizedK, ...normalizedB, ...normalizedE];
+        const shuffledCards = shuffleCards(allCards);
+
+        setProjects(shuffledCards);
+        setLoading(false);
+      } catch (error) {
+        console.error('Error loading project data:', error);
+        setLoading(false);
+      }
+    };
+
+    loadProjects();
+  }, []);
+
+  // Check for MiniPay and auto-connect
+  useEffect(() => {
+    if (isMiniPay() && !isConnected) {
+      connect({ connector: injected({ target: 'metaMask' }) });
+    }
+  }, [isConnected, connect]);
+
+  // Handle Amount Selection
+  const handleAmountSelect = (amount: DonationAmount, currency: StableCoin, swipes: ConfirmSwipes) => {
+    setDonationAmount(amount);
+    setDonationCurrency(currency);
+    setConfirmSwipes(swipes);
+  };
+
+  // Filter projects by category for swipe mode
+  const filteredProjects = selectedCategory === "See All"
+    ? projects
+    : projects.filter(p => p.category === selectedCategory || (selectedCategory === "Builders" && p.category === "Regeneration"));
+
+  // Donation Contract Logic
+  const { writeContractAsync } = useWriteContract();
+
+  const handleSwipeRightUI = () => {
+    // Just move UI without donating (called after donation success)
+    if (currentIndex < filteredProjects.length - 1) {
+      setCurrentIndex(currentIndex + 1);
+    } else {
+      setCurrentIndex(0); // Loop
+    }
+  };
+
+  const handleDonate = async (project: Project, forceAmount?: number) => {
+    if (!isConnected || !address) {
+      alert("Please connect your wallet first.");
+      connect({ connector: injected({ target: 'metaMask' }) });
+      return;
+    }
+
+    const amountStr = donationAmount?.split(" ")[0].replace(/[^0-9.]/g, "") || "0";
+    const amount = forceAmount || parseFloat(amountStr);
+
+    if (!amount || amount <= 0) {
+      alert("Invalid donation amount");
+      return;
+    }
+
+    // Determine token address
+    let tokenAddr = CUSD_ADDRESS;
+    if (donationCurrency === "USDT") tokenAddr = USDT_ADDRESS;
+
+    try {
+      // 1. Approve (Optimistic)
+      const weiAmount = parseEther(amount.toString());
+
+      await writeContractAsync({
+        address: tokenAddr,
+        abi: erc20Abi,
+        functionName: "approve",
+        args: [USDT_ADAPTER_ADDRESS, weiAmount],
+      });
+
+      // 2. Donate
+      await writeContractAsync({
+        address: USDT_ADAPTER_ADDRESS,
+        abi: donationAbi,
+        functionName: "donate",
+        args: [tokenAddr, project.walletAddress as `0x${string}`, weiAmount],
+      });
+
+      // Success UI update (mocked)
+      alert(`Donated ${amount} ${donationCurrency} to ${project.name}!`);
+
+      // Move to next card if swiping
+      if (viewMode === "swipe") {
+        handleSwipeRightUI();
+      }
+
+    } catch (e) {
+      console.error("Donation failed:", e);
+      alert("Transaction failed. ensure you have balance and approved.");
+    }
+  };
+
+  const handleSwipeRight = () => {
+    if (filteredProjects[currentIndex]) {
+      handleDonate(filteredProjects[currentIndex]);
+    }
+  };
+
+  const handleSwipeLeft = () => {
+    if (currentIndex < filteredProjects.length - 1) {
+      setCurrentIndex(currentIndex + 1);
+    } else {
+      setCurrentIndex(0);
+    }
+  };
+
+  const handleRewind = () => {
+    if (currentIndex > 0) setCurrentIndex(currentIndex - 1);
+  };
+
+  // Render List View Projects
+  const renderListView = () => {
+    return (
+      <div className="pt-20 pb-20 px-0">
+        {categories.filter(c => c !== "See All").map(cat => {
+          let catProjects = projects.filter(p => p.category === cat);
+          if (cat === "Eco Projects") catProjects = projects.filter(p => ["Nature", "Climate Action", "Regeneration"].includes(p.category));
+          if (cat === "DApps") catProjects = projects.filter(p => p.category === "DApps" || p.category === "DeFi" || p.category === "Social Impact");
+
+          if (catProjects.length === 0) return null;
+
+          return (
+            <CategorySection
+              key={cat}
+              category={cat}
+              projects={catProjects}
+              onDonate={(p, amt) => handleDonate(p, amt || 5)}
             />
-          </a>
+          );
+        })}
+      </div>
+    );
+  }
+
+  return (
+    <main className="flex min-h-screen flex-col font-sans text-white overflow-hidden relative selection:bg-yellow-500/30">
+      <StarryBackground />
+
+      {/* Header */}
+      <div className="fixed top-0 w-full z-40 bg-gray-900/95 backdrop-blur-sm border-b border-gray-800">
+        <div className="flex flex-col items-center py-2 px-4">
+          <h1 className="text-xl font-bold font-mono tracking-tighter" style={{ fontFamily: "Pixelify Sans, monospace" }}>SwipePad</h1>
+          {isConnected && (
+            <div className="flex items-center space-x-2 mt-1">
+              <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
+              <span className="text-xs text-gray-400">{address?.slice(0, 6)}...{address?.slice(-4)}</span>
+            </div>
+          )}
         </div>
       </div>
 
-      <div className="relative z-[-1] flex place-items-center before:absolute before:h-[300px] before:w-full before:-translate-x-1/2 before:rounded-full before:bg-gradient-radial before:from-white before:to-transparent before:blur-2xl before:content-[''] after:absolute after:-z-20 after:h-[180px] after:w-full after:translate-x-1/3 after:bg-gradient-conic after:from-sky-200 after:via-blue-200 after:blur-2xl after:content-[''] before:dark:bg-gradient-to-br before:dark:from-transparent before:dark:to-blue-700 before:dark:opacity-10 after:dark:from-sky-900 after:dark:via-[#0141ff] after:dark:opacity-40 sm:before:w-[480px] sm:after:w-[240px] before:lg:h-[360px]">
-        <Image
-          className="relative dark:drop-shadow-[0_0_0.3rem_#ffffff70] dark:invert"
-          src="/next.svg"
-          alt="Next.js Logo"
-          width={180}
-          height={37}
-          priority
-        />
-      </div>
+      {/* Content */}
+      <div className="flex-1 w-full max-w-md mx-auto relative pt-16">
+        <ToggleMenu viewMode={viewMode} setViewMode={setViewMode} large={donationAmount === null} />
 
-      <div className="mb-32 grid text-center lg:mb-0 lg:w-full lg:max-w-5xl lg:grid-cols-4 lg:text-left">
-        <a
-          href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className="mb-3 text-2xl font-semibold">
-            Docs{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className="m-0 max-w-[30ch] text-sm opacity-50">
-            Find in-depth information about Next.js features and API.
-          </p>
-        </a>
+        {loading ? (
+          <div className="flex items-center justify-center h-[60vh]">
+            <Loader2 className="w-10 h-10 animate-spin text-yellow-400" />
+            <span className="ml-2">Loading Projects...</span>
+          </div>
+        ) : (
+          <>
+            {viewMode === "swipe" ? (
+              <>
+                {donationAmount === null ? (
+                  <AmountSelector onSelect={handleAmountSelect} />
+                ) : (
+                  <div className="h-full flex flex-col">
+                    <CategoryMenu
+                      selectedCategory={selectedCategory}
+                      setSelectedCategory={setSelectedCategory}
+                      setCurrentProjectIndex={() => setCurrentIndex(0)}
+                    />
 
-        <a
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className="mb-3 text-2xl font-semibold">
-            Learn{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className="m-0 max-w-[30ch] text-sm opacity-50">
-            Learn about Next.js in an interactive course with&nbsp;quizzes!
-          </p>
-        </a>
+                    <div className="px-4 pb-2 flex justify-between items-center text-sm">
+                      <span className="text-gray-400">Donating: <span className="text-yellow-400 font-bold">{donationAmount} {donationCurrency}</span></span>
+                      <button onClick={() => setDonationAmount(null)} className="text-xs text-gray-500 underline">Change</button>
+                    </div>
 
-        <a
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className="mb-3 text-2xl font-semibold">
-            Templates{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className="m-0 max-w-[30ch] text-sm opacity-50">
-            Explore starter templates for Next.js.
-          </p>
-        </a>
-
-        <a
-          href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className="mb-3 text-2xl font-semibold">
-            Deploy{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className="m-0 max-w-[30ch] text-balance text-sm opacity-50">
-            Instantly deploy your Next.js site to a shareable URL with Vercel.
-          </p>
-        </a>
+                    <div className="flex-1 px-4 flex items-center justify-center pb-20">
+                      {filteredProjects.length > 0 && filteredProjects[currentIndex] ? (
+                        <div className="w-full max-w-sm aspect-[3/4]">
+                          <ProjectCard
+                            project={filteredProjects[currentIndex]}
+                            viewMode="swipe"
+                            onSwipeLeft={handleSwipeLeft}
+                            onSwipeRight={handleSwipeRight}
+                            onRewind={currentIndex > 0 ? handleRewind : undefined}
+                            donationAmount={donationAmount}
+                            donationCurrency={donationCurrency}
+                          />
+                        </div>
+                      ) : (
+                        <div className="text-center text-gray-500">No projects found in this category.</div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </>
+            ) : (
+              renderListView()
+            )}
+          </>
+        )}
       </div>
     </main>
   );
