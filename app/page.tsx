@@ -161,8 +161,8 @@ export default function Home() {
     }
 
     // Determine token address
-    let tokenAddr = CUSD_ADDRESS;
-    if (donationCurrency === "USDT") tokenAddr = USDT_ADDRESS;
+    let tokenAddr = CUSD_ADDRESS as `0x${string}`;
+    if (donationCurrency === "USDT") tokenAddr = USDT_ADDRESS as `0x${string}`;
 
     try {
       // 1. Approve (Optimistic)
