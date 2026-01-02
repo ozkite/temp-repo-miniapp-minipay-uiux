@@ -17,7 +17,7 @@ import { ProjectCard } from '@/components/project-card';
 import { CategorySection } from '@/components/category-section';
 
 // Contract Addresses
-const USDT_ADAPTER_ADDRESS = "0x0e2a3e05bc9a16f5292ddf5e1cD6D6A887483D5e"; // Provided in prompt
+const USDT_ADAPTER_ADDRESS = "0x0e2a3e05bc9a16f5292ddf5e1cD6D6A887483D5e";
 const USDT_ADDRESS = "0x48065fbBE25f71C9282dd5222dEFa1B3D5610b05"; // Celo USDT
 const CUSD_ADDRESS = "0x765DE816845861e75A25fCA122bb6898B8B1282a"; // Celo cUSD
 
@@ -55,17 +55,18 @@ const erc20Abi = [
 export default function Home() {
   const { address, isConnected } = useAccount();
   const { connect } = useConnect();
-  const { disconnect } = useDisconnect();
+  //   const { disconnect } = useDisconnect();
 
   const [projects, setProjects] = useState<Project[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [loading, setLoading] = useState(true);
 
+  const [showWelcome, setShowWelcome] = useState(true);
   const [viewMode, setViewMode] = useState<"swipe" | "list">("swipe");
   const [donationAmount, setDonationAmount] = useState<DonationAmount | null>(null);
-  const [donationCurrency, setDonationCurrency] = useState<StableCoin>("cUSD");
+  const [donationCurrency, setDonationCurrency] = useState<StableCoin>("USDT");
   const [confirmSwipes, setConfirmSwipes] = useState<ConfirmSwipes>(20);
-  const [selectedCategory, setSelectedCategory] = useState("See All");
+  const [selectedCategory, setSelectedCategory] = useState("Builders"); // Default to Builders as per prompt flow implication, or just the first applicable
 
   // Load and shuffle project data
   useEffect(() => {
@@ -83,24 +84,50 @@ export default function Home() {
         const eCards = (eCardsModule.default || eCardsModule) as any[];
 
         // Normalize data to fit Project interface
-        const normalize = (items: any[], category: string) => items.map((item, idx) => ({
-          id: item.id || `${category}-${idx}`,
-          name: item["Name of Project"] || item.name || "Unknown",
-          description: item["Description of Project"] || item.bio || item.description || "",
-          category: item.Category || category, // Use provided category or fallback
-          imageUrl: item["URL to Logo"] || item.image || "NA",
-          website: item.Website || item.website || "NA",
-          twitter: item.Twitter || item.twitter || "NA",
-          walletAddress: item.wallet || item.walletAddress || "0x0000000000000000000000000000000000000000", // Fallback
-          ...item
+        const normalizedK = kCards.map((item: any, idx: number) => ({
+          id: `dapp-${idx}`,
+          name: item["Project Name"] || "Unknown",
+          description: item.Description || "",
+          category: "DApps",
+          imageUrl: item["Image url"] || "NA",
+          website: item.Website || "NA",
+          twitter: item.Twitter || "NA",
+          github: item.GitHub || "NA",
+          farcaster: item.Farcaster || "NA",
+          linkedin: item.LinkedIn || "NA",
+          walletAddress: item.Wallet || "0x0000000000000000000000000000000000000000",
+          boostAmount: 0
         }));
 
-        const normalizedK = normalize(kCards, "DApps");
-        const normalizedB = normalize(bCards, "Builders");
-        const normalizedE = normalize(eCards, "Eco Projects");
+        const normalizedB = bCards.map((item: any, idx: number) => ({
+          id: `builder-${idx}`,
+          name: item.Name || "Unknown",
+          description: item.Description || "",
+          category: "Builders",
+          imageUrl: item["Profile Image URL"] || "NA",
+          website: item.Website || item.GitHub || "NA",
+          twitter: item.Twitter || "NA",
+          github: item.GitHub || "NA",
+          farcaster: item.Farcaster || "NA",
+          linkedin: item.LinkedIn || "NA",
+          walletAddress: item["Wallet Address"] || "0x0000000000000000000000000000000000000000",
+          boostAmount: 0
+        }));
+
+        const normalizedE = eCards.map((item: any, idx: number) => ({
+          id: `eco-${idx}`,
+          name: item["Project Name"] || "Unknown",
+          description: item.Description || "",
+          category: "Eco Projects",
+          imageUrl: item["Image url"] || "NA",
+          website: item.Website || "NA",
+          walletAddress: item.Wallet || "0x0000000000000000000000000000000000000000",
+          boostAmount: 0
+          // Add other fields as NA if missing
+        }));
 
         // Combine and shuffle all cards
-        const allCards = [...normalizedK, ...normalizedB, ...normalizedE];
+        const allCards = [...normalizedB, ...normalizedE, ...normalizedK]; // Builders first if we want them to populate first bucket, but we shuffle anyway
         const shuffledCards = shuffleCards(allCards);
 
         setProjects(shuffledCards);
@@ -126,12 +153,13 @@ export default function Home() {
     setDonationAmount(amount);
     setDonationCurrency(currency);
     setConfirmSwipes(swipes);
+    // Explicitly set category if needed, or let user choose. 
+    // If we want to start with Builders:
+    setSelectedCategory("Builders");
   };
 
   // Filter projects by category for swipe mode
-  const filteredProjects = selectedCategory === "See All"
-    ? projects
-    : projects.filter(p => p.category === selectedCategory || (selectedCategory === "Builders" && p.category === "Regeneration"));
+  const filteredProjects = projects.filter(p => p.category === selectedCategory);
 
   // Donation Contract Logic
   const { writeContractAsync } = useWriteContract();
@@ -215,15 +243,16 @@ export default function Home() {
     if (currentIndex > 0) setCurrentIndex(currentIndex - 1);
   };
 
+  const handleEnterApp = () => {
+    setShowWelcome(false);
+  }
+
   // Render List View Projects
   const renderListView = () => {
     return (
       <div className="pt-20 pb-20 px-0">
-        {categories.filter(c => c !== "See All").map(cat => {
+        {categories.map(cat => {
           let catProjects = projects.filter(p => p.category === cat);
-          if (cat === "Eco Projects") catProjects = projects.filter(p => ["Nature", "Climate Action", "Regeneration"].includes(p.category));
-          if (cat === "DApps") catProjects = projects.filter(p => p.category === "DApps" || p.category === "DeFi" || p.category === "Social Impact");
-
           if (catProjects.length === 0) return null;
 
           return (
@@ -243,6 +272,26 @@ export default function Home() {
     <main className="flex min-h-screen flex-col font-sans text-white overflow-hidden relative selection:bg-yellow-500/30">
       <StarryBackground />
 
+      {/* Welcome Screen */}
+      {showWelcome && (
+        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-[#0f0f23] text-center p-6">
+          <h1 className="text-4xl font-bold mb-4" style={{ fontFamily: "Pixelify Sans, monospace" }}>SwipePad</h1>
+          <h2 className="text-xl font-bold mb-2">Welcome to SwipePad!</h2>
+          <p className="text-gray-400 mb-8 max-w-xs">
+            Support regenerative projects with micro-donations through simple swipes on the Celo blockchain.
+          </p>
+          <button
+            onClick={handleEnterApp}
+            className="w-full max-w-xs py-4 bg-[#FFD600] hover:bg-[#E6C200] text-black font-bold rounded-lg transition-colors"
+          >
+            Enter MiniApp
+          </button>
+          <p className="text-xs text-gray-500 mt-4 max-w-xs">
+            By connecting, you agree to our Terms of Service and Privacy Policy. Your funds remain secure in your wallet at all times.
+          </p>
+        </div>
+      )}
+
       {/* Header */}
       <div className="fixed top-0 w-full z-40 bg-gray-900/95 backdrop-blur-sm border-b border-gray-800">
         <div className="flex flex-col items-center py-2 px-4">
@@ -257,59 +306,64 @@ export default function Home() {
       </div>
 
       {/* Content */}
-      <div className="flex-1 w-full max-w-md mx-auto relative pt-16">
-        <ToggleMenu viewMode={viewMode} setViewMode={setViewMode} large={donationAmount === null} />
+      {!showWelcome && (
+        <div className="flex-1 w-full max-w-md mx-auto relative pt-16">
+          <ToggleMenu viewMode={viewMode} setViewMode={setViewMode} large={donationAmount === null} />
 
-        {loading ? (
-          <div className="flex items-center justify-center h-[60vh]">
-            <Loader2 className="w-10 h-10 animate-spin text-yellow-400" />
-            <span className="ml-2">Loading Projects...</span>
-          </div>
-        ) : (
-          <>
-            {viewMode === "swipe" ? (
-              <>
-                {donationAmount === null ? (
-                  <AmountSelector onSelect={handleAmountSelect} />
-                ) : (
-                  <div className="h-full flex flex-col">
-                    <CategoryMenu
-                      selectedCategory={selectedCategory}
-                      setSelectedCategory={setSelectedCategory}
-                      setCurrentProjectIndex={() => setCurrentIndex(0)}
-                    />
+          {loading ? (
+            <div className="flex items-center justify-center h-[60vh]">
+              <Loader2 className="w-10 h-10 animate-spin text-yellow-400" />
+              <span className="ml-2">Loading Projects...</span>
+            </div>
+          ) : (
+            <>
+              {viewMode === "swipe" ? (
+                <>
+                  {donationAmount === null ? (
+                    <AmountSelector onSelect={handleAmountSelect} />
+                  ) : (
+                    <div className="h-full flex flex-col">
+                      <CategoryMenu
+                        selectedCategory={selectedCategory}
+                        setSelectedCategory={setSelectedCategory}
+                        setCurrentProjectIndex={() => setCurrentIndex(0)}
+                      />
 
-                    <div className="px-4 pb-2 flex justify-between items-center text-sm">
-                      <span className="text-gray-400">Donating: <span className="text-yellow-400 font-bold">{donationAmount} {donationCurrency}</span></span>
-                      <button onClick={() => setDonationAmount(null)} className="text-xs text-gray-500 underline">Change</button>
+                      <div className="px-4 pb-2 flex justify-between items-center text-sm">
+                        <span className="text-gray-400">Donating: <span className="text-yellow-400 font-bold">{donationAmount} {donationCurrency}</span></span>
+                        <button onClick={() => setDonationAmount(null)} className="text-xs text-gray-500 underline">Change</button>
+                      </div>
+
+                      <div className="flex-1 px-4 flex items-center justify-center pb-20">
+                        {filteredProjects.length > 0 && filteredProjects[currentIndex] ? (
+                          <div className="w-full max-w-sm aspect-[3/4]">
+                            <ProjectCard
+                              project={filteredProjects[currentIndex]}
+                              viewMode="swipe"
+                              onSwipeLeft={handleSwipeLeft}
+                              onSwipeRight={handleSwipeRight}
+                              onRewind={currentIndex > 0 ? handleRewind : undefined}
+                              donationAmount={donationAmount}
+                              donationCurrency={donationCurrency}
+                            />
+                          </div>
+                        ) : (
+                          <div className="text-center text-gray-500 mt-10">
+                            <p className="mb-4">No cards left in this category!</p>
+                            <button onClick={() => setCurrentIndex(0)} className="text-[#FFD600] underline">Start Over</button>
+                          </div>
+                        )}
+                      </div>
                     </div>
-
-                    <div className="flex-1 px-4 flex items-center justify-center pb-20">
-                      {filteredProjects.length > 0 && filteredProjects[currentIndex] ? (
-                        <div className="w-full max-w-sm aspect-[3/4]">
-                          <ProjectCard
-                            project={filteredProjects[currentIndex]}
-                            viewMode="swipe"
-                            onSwipeLeft={handleSwipeLeft}
-                            onSwipeRight={handleSwipeRight}
-                            onRewind={currentIndex > 0 ? handleRewind : undefined}
-                            donationAmount={donationAmount}
-                            donationCurrency={donationCurrency}
-                          />
-                        </div>
-                      ) : (
-                        <div className="text-center text-gray-500">No projects found in this category.</div>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </>
-            ) : (
-              renderListView()
-            )}
-          </>
-        )}
-      </div>
+                  )}
+                </>
+              ) : (
+                renderListView()
+              )}
+            </>
+          )}
+        </div>
+      )}
     </main>
   );
 }

@@ -1,7 +1,6 @@
 "use client"
 
 import { useState } from "react"
-// import { projects } from "@/lib/data" // Unused import removed
 
 export type DonationAmount = "0.01¢" | "0.10¢" | "0.50¢" | "1 Stable"
 export type StableCoin = "cUSD" | "cEUR" | "USDT" | "USDC" | "USDD" | "GLO"
@@ -13,7 +12,8 @@ interface AmountSelectorProps {
 
 export function AmountSelector({ onSelect }: AmountSelectorProps) {
     const [selectedAmount, setSelectedAmount] = useState<DonationAmount>("0.01¢")
-    const [selectedCurrency, setSelectedCurrency] = useState<StableCoin>("cUSD")
+    // Force USDT default
+    const [selectedCurrency, setSelectedCurrency] = useState<StableCoin>("USDT")
     const [selectedSwipes, setSelectedSwipes] = useState<ConfirmSwipes>(20)
 
     const amounts: DonationAmount[] = ["0.01¢", "0.10¢", "0.50¢", "1 Stable"]
@@ -23,10 +23,18 @@ export function AmountSelector({ onSelect }: AmountSelectorProps) {
     const swipeOptions: ConfirmSwipes[] = [20, 30, 50]
 
     const handleConfirm = () => {
-        onSelect(selectedAmount, selectedCurrency, selectedSwipes)
+        // Enforce USDT regardless of what might have been clicked (if we allowed clicking)
+        onSelect(selectedAmount, "USDT", selectedSwipes)
     }
 
-    // const totalCards = projects.length // Unused
+    const handleCurrencySelect = (currency: StableCoin) => {
+        if (currency === "USDT") {
+            setSelectedCurrency(currency);
+        } else {
+            // Optional: Alert user or just do nothing
+            // alert("Only USDT is available at this time.");
+        }
+    }
 
     return (
         <div className="px-6 mt-8">
@@ -58,10 +66,11 @@ export function AmountSelector({ onSelect }: AmountSelectorProps) {
                             {currenciesRow1.map((currency) => (
                                 <button
                                     key={currency}
-                                    onClick={() => setSelectedCurrency(currency)}
+                                    onClick={() => handleCurrencySelect(currency)}
+                                    disabled={currency !== "USDT"}
                                     className={`py-3 px-4 rounded-lg font-medium transition-colors ${selectedCurrency === currency
                                         ? "bg-[#FFD600] text-black"
-                                        : "bg-gray-700 text-gray-300 hover:bg-gray-600"
+                                        : "bg-gray-800 text-gray-500 cursor-not-allowed border border-gray-700 opacity-50"
                                         }`}
                                 >
                                     {currency}
@@ -72,10 +81,11 @@ export function AmountSelector({ onSelect }: AmountSelectorProps) {
                             {currenciesRow2.map((currency) => (
                                 <button
                                     key={currency}
-                                    onClick={() => setSelectedCurrency(currency)}
+                                    onClick={() => handleCurrencySelect(currency)}
+                                    disabled={currency !== "USDT"}
                                     className={`py-3 px-4 rounded-lg font-medium transition-colors w-1/3 ${selectedCurrency === currency
                                         ? "bg-[#FFD600] text-black"
-                                        : "bg-gray-700 text-gray-300 hover:bg-gray-600"
+                                        : "bg-gray-800 text-gray-500 cursor-not-allowed border border-gray-700 opacity-50"
                                         }`}
                                 >
                                     {currency}

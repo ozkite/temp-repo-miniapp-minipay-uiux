@@ -1,3 +1,5 @@
+export const categories = ["Builders", "Eco Projects", "DApps"];
+
 export interface Project {
     id: string
     name: string
@@ -10,16 +12,15 @@ export interface Project {
     linkedin?: string
     farcaster?: string
     github?: string
+    walletAddress?: string
+    // ... other fields can remain optional
     fundingGoal?: number
     fundingCurrent?: number
     likes?: number
     comments?: number
-    walletAddress?: string
     isBookmarked?: boolean
     userHasLiked?: boolean
     userHasCommented?: boolean
     reportCount?: number
     boostAmount?: number
 }
-
-export const categories = ["See All", "Builders", "Eco Projects", "DApps"];
